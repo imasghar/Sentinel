@@ -17,29 +17,6 @@ namespace Sentinel.Controllers
             _responseHelper = responseHelper;
         }
 
-        [HttpGet]
-        public IActionResult GetAllUsers()
-        {
-            var users = _UserService.GetAllUsers();
-            return Ok(users);
-        }
-
-        [HttpGet("getByid{id}")]
-        public async Task<IActionResult> GetUserById(int id)
-        {
-            try
-            {
-                var user = await _UserService.GetUserById(id);
-                var response = _responseHelper.Success(user, "User retrieved successfully.");
-                return Ok(response);
-            } catch(Exception ex)
-            {
-                var ErrorResponse = _responseHelper.Error<SentinelUser>(ex.Message);
-                return BadRequest(ErrorResponse);
-            }
-            
-        }
-
         [HttpPost("createUser")]
         public async Task<IActionResult> CreateUser([FromBody] SentinelUserDTO user)
         {
@@ -47,23 +24,33 @@ namespace Sentinel.Controllers
             {
                 var createdUser = await _UserService.CreateUser(user);
                 var response = _responseHelper.Success(createdUser, "User registered successfully.");
-                return CreatedAtAction(nameof(GetUserById), new { id = createdUser.Id }, response);
-            } catch(Exception ex)
+                return Ok(response);
+            }
+            catch (Exception ex)
             {
                 var ErrorResponse = _responseHelper.Error<SentinelUser>(ex.Message);
                 return BadRequest(ErrorResponse);
             }
         }
 
-        [HttpDelete("deleteUser")]
-        public IActionResult DeleteUser(int id)
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginDTO dto)
         {
-            var success = _UserService.DeleteUser(id);
-            if (!success)
+            try
             {
-                return NotFound();
+                var token = await _UserService.Login(dto);
+                //var tokenObj = new
+                //{
+                //    token = token
+                //};
+                var response = _responseHelper.SuccessData<object>(token, "Login successful.");
+                return Ok(response);
             }
-            return NoContent();
+            catch (Exception ex)
+            {
+                var ErrorResponse = _responseHelper.Error<SentinelUser>(ex.Message);
+                return BadRequest(ErrorResponse);
+            }
         }
     }
 }

@@ -6,6 +6,8 @@ namespace Sentinel.DTOs
 {
     public class SentinelUserDTO
     {
+        public int Id { get; set; }
+
         [Required]
         [StringLength(25), MinLength(3, ErrorMessage = "First name must be at least 3 characters.")]
         [RegularExpression(@"^[A-Za-z]+$", ErrorMessage = "Only letters allowed")]
@@ -28,6 +30,10 @@ namespace Sentinel.DTOs
         [Required]
         [EmailAddress]
         public string Email { get; set; } = null!;
+
+        [Required]
+        [MinLength(8, ErrorMessage = "Password must be at least 8 characters long.")]
+        public string PasswordHash { get; set; } = null!;
 
 
 

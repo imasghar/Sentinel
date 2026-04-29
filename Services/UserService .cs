@@ -2,26 +2,35 @@
 using Sentinel.DTOs;
 using Sentinel.Models;
 using Microsoft.AspNetCore.Http;
+using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
+using Sentinel.Helpers;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 namespace Sentinel.Services
 {
     public class UserService : IUserService
     {
-        private readonly List<SentinelUser> Users = new();
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly SentinelDbContext _context;
-        
+        private readonly IConfiguration _configuration;
+        private readonly ApiResponseHelper _responseHelper;
+
         private int _nextId = 1;
-        public UserService(SentinelDbContext context, IHttpContextAccessor httpContextAccessor)
+        public UserService(SentinelDbContext context, IHttpContextAccessor httpContextAccessor, ApiResponseHelper apiResponseHelper, IConfiguration configuration)
         {
             _context = context;
             _httpContextAccessor = httpContextAccessor;
+            _responseHelper = apiResponseHelper;
+            _configuration = configuration;
         }
 
-        public async Task<SentinelUser> CreateUser(SentinelUserDTO user)
+        public async Task<SentinelUserDTO> CreateUser(SentinelUserDTO user)
         {
 
-            string? ImagePath = null;
+            //string? ImagePath = null;
             //if(user.ProfilePicUrl != null && user.ProfilePicUrl.Length > 0)
             //{
             //var uploadFolders = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "profiles");
@@ -40,6 +49,9 @@ namespace Sentinel.Services
             {
                 throw new Exception("User already exists with this Email or CNIC");
             }
+            var salt = BCrypt.Net.BCrypt.GenerateSalt(12);
+            var HashedPwd = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash, salt);
+
             var sentinelUser = new SentinelUser
             {
                 FirstName = user.FirstName,
@@ -47,6 +59,7 @@ namespace Sentinel.Services
                 Gender = user.Gender,
                 Dob = user.Dob,
                 Email = user.Email,
+                PasswordHash = HashedPwd,
                 Biography = user.Biography,
                 CNIC = user.CNIC,
                 PhoneNumber = user.PhoneNumber,
@@ -59,50 +72,48 @@ namespace Sentinel.Services
             var result = await _context.SentinelUsers.AddAsync(sentinelUser);
             await _context.SaveChangesAsync();
             var createdUser = result.Entity;
-            return createdUser;
+            var SuccessDto = new SentinelUserDTO
+            {
+                Id = createdUser.Id,
+                FirstName = createdUser.FirstName,
+                LastName = createdUser.LastName,
+                Email = createdUser.Email,
+                CNIC = createdUser.CNIC,
+                Address = createdUser.Address,
+                Biography = createdUser.Biography,
+                Dob = createdUser.Dob,
+                Gender = createdUser.Gender,
+                PhoneNumber = createdUser.PhoneNumber,
+                ProfilePicUrl = createdUser.ProfilePicUrl
+            };
+            return SuccessDto;
         }
 
-        public List<SentinelUser> GetAllUsers()
+        public async Task<string> Login(LoginDTO dto)
         {
-            return Users;
-        }
-
-        public async Task<SentinelUser>  GetUserById(int id)
-        {
-            var User = await _context.SentinelUsers.FindAsync(id);
-            if(User != null)
+            var user = await _context.SentinelUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            if (user == null || !BCrypt.Net.BCrypt.Verify(dto.PasswordHash, user.PasswordHash))
             {
-                return User;
-            } else
-            {
-                throw new Exception("User Not Found");
-            }
-        }
-
-        public SentinelUser UpdateUser(int id, SentinelUser updatedUser)
-        {
-            var User = Users.Find(u => u.Id == id);
-            if (User != null)
-            {
-                updatedUser.Id = id;
-                Users.Remove(User);
-                Users.Add(updatedUser);
+                throw new Exception("Invalid email or password.");
             }
 
-            return updatedUser;
-        }
+            var toekHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"]!);
 
-
-        public bool DeleteUser(int id)
-        {
-            var User = Users.Find(u => u.Id == id);
-            if (User != null)
+            var TokenDescriptor = new SecurityTokenDescriptor
             {
-                Users.Remove(User);
-                return true;
-            }
-            return false;
-        }
+                Subject = new ClaimsIdentity(new Claim[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                    new Claim(ClaimTypes.Email, user.Email)
+                }),
+                Expires = DateTime.UtcNow.AddMinutes(15),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
 
+            var token = toekHandler.CreateToken(TokenDescriptor);
+            var tokenString = toekHandler.WriteToken(token);
+            return tokenString;
+        }
     }
 }
